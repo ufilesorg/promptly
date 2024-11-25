@@ -17,7 +17,12 @@ class Settings(metaclass=Singleton):
     """Server config settings."""
 
     root_url: str = os.getenv("DOMAIN", default="http://localhost:8000")
+    mongo_uri: str = os.getenv("MONGO_URI", default="mongodb://mongo:27017/")
+    project_name: str = os.getenv("PROJECT_NAME", default="Promptly")
     base_dir: Path = Path(__file__).resolve().parent.parent
+    base_path: str = "/v1/apps/promptly"
+    page_max_limit: int = 100
+    update_time: int = 10
 
     testing: bool = os.getenv("TESTING", default=False)
 
