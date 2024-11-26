@@ -3,24 +3,18 @@ import logging
 import os
 
 import langdetect
-
-# import openai
 from aiocache import cached
 from aiocache.serializers import PickleSerializer
+from core import exceptions
 from fastapi_mongo_base._utils.aionetwork import aio_request
 from fastapi_mongo_base._utils.basic import retry_execution
 from fastapi_mongo_base._utils.texttools import backtick_formatter, format_string_keys
-from metisai.async_metis import AsyncMetisBot
-
-from core import exceptions
-
-# openai_client = openai.AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-metis_client = AsyncMetisBot(
-    api_key=os.getenv("METIS_API_KEY"), bot_id=os.getenv("METIS_BOT_ID")
-)
 
 
 async def openai_chat(messages: dict, **kwargs):
+    import openai
+
+    openai_client = openai.AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
     response = await openai_client.chat.completions.create(
         model="gpt-4o",
         messages=messages,
@@ -34,6 +28,12 @@ async def openai_chat(messages: dict, **kwargs):
 
 @retry_execution(3, delay=5)
 async def metis_chat(messages: dict, **kwargs):
+    from metisai.async_metis import AsyncMetisBot
+
+    metis_client = AsyncMetisBot(
+        api_key=os.getenv("METIS_API_KEY"), bot_id=os.getenv("METIS_BOT_ID")
+    )
+
     try:
         user_id = kwargs.get("user_id")
         session = await metis_client.create_session(user_id)
@@ -81,7 +81,10 @@ async def answer_with_ai(key, **kwargs):
 
         return await answer_messages(messages, **kwargs)
     except Exception as e:
-        logging.error(f"AI request failed for {key}, {e}")
+        import traceback
+
+        traceback_str = "".join(traceback.format_tb(e.__traceback__))
+        logging.error(f"AI request failed for {key},\n{traceback_str}\n{e}")
         raise exceptions.BaseHTTPException(
             status_code=500,
             error="Bad Request",
@@ -90,6 +93,11 @@ async def answer_with_ai(key, **kwargs):
 
 
 async def translate(query: str, to: str = "en"):
+    from metisai.async_metis import AsyncMetisBot
+
+    metis_client = AsyncMetisBot(
+        api_key=os.getenv("METIS_API_KEY"), bot_id=os.getenv("METIS_BOT_ID")
+    )
     try:
         lang = langdetect.detect(query)
     except:
@@ -104,9 +112,9 @@ async def translate(query: str, to: str = "en"):
     }
     if not languages.get(to):
         to = "en"
-    prompt = f"Translate the following text to '{to}': \"{query}\""
+    prompt = f"Translate the following text to '{to}': \"{query}\" and answer in json format."
 
-    logging.warning(f"process_task {query}")
+    logging.warning(f"process_task {query}, {to}")
 
     session = await metis_client.create_session()
     message = await metis_client.send_message(session, prompt)
