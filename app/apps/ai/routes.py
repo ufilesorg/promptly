@@ -1,23 +1,20 @@
+import json
 import logging
-from fastapi import APIRouter, Body, Depends
+
+from fastapi import APIRouter, Body, Depends, Request
 from fastapi_mongo_base._utils.texttools import format_string_keys
-from usso.fastapi import jwt_access_security
 from usso import UserData
+from usso.fastapi import jwt_access_security
+
 from .services import (
     answer_with_ai,
-    translate,
     get_message_from_panel,
     get_messages_list,
+    translate,
 )
+from .schemas import TranslateRequest
 
 router = APIRouter(prefix="/ai", tags=["AI"])
-
-
-@router.post("/translate")
-async def translate_with_ai(
-    data: dict = Body(...), user: UserData = Depends(jwt_access_security)
-):
-    return await translate(**data)
 
 
 @router.get("/search")
@@ -34,8 +31,15 @@ async def get_ai_keys(key: str):
     return format_keys
 
 
-@router.post("/{key}")
-async def answer_with_ai_route(
-    key: str, data: dict = Body(...), user: UserData = Depends(jwt_access_security)
-):
+@router.post("/translate")
+async def translate_with_ai(request: Request, data: TranslateRequest):
+    user: UserData = jwt_access_security(request)
+    # return await answer_with_ai_route(request, "translate", data)
+    return await translate(**data.model_dump())
+
+
+@router.post("/{key:str}")
+async def answer_with_ai_route(request: Request, key: str, data: dict = Body(...)):
+    # logging.info(f"{key} -> {json.dumps(data, ensure_ascii=False)}")
+    user: UserData = jwt_access_security(request)
     return await answer_with_ai(key, **data)

@@ -5,10 +5,11 @@ import os
 import langdetect
 from aiocache import cached
 from aiocache.serializers import PickleSerializer
-from core import exceptions
 from fastapi_mongo_base._utils.aionetwork import aio_request
 from fastapi_mongo_base._utils.basic import retry_execution
 from fastapi_mongo_base._utils.texttools import backtick_formatter, format_string_keys
+
+from core import exceptions, enums
 
 
 async def openai_chat(messages: dict, **kwargs):
@@ -61,8 +62,12 @@ async def answer_messages(messages: dict, **kwargs):
 async def answer_with_ai(key, **kwargs):
     try:
         kwargs["lang"] = kwargs.get("lang", "Persian")
-        system_prompt: str = await get_message_from_panel(f"pixiee_ai_system_{key}")
-        user_prompt: str = await get_message_from_panel(f"pixiee_ai_user_{key}")
+        system_prompt: str = await get_message_from_panel(
+            f"pixiee_ai_system_{key}", raise_exception=False
+        )
+        user_prompt: str = await get_message_from_panel(
+            f"pixiee_ai_user_{key}", raise_exception=False
+        )
         for k in list(
             format_string_keys(system_prompt) | format_string_keys(user_prompt)
         ):
@@ -92,35 +97,23 @@ async def answer_with_ai(key, **kwargs):
         )
 
 
-async def translate(query: str, to: str = "en"):
-    from metisai.async_metis import AsyncMetisBot
-
-    metis_client = AsyncMetisBot(
-        api_key=os.getenv("METIS_API_KEY"), bot_id=os.getenv("METIS_BOT_ID")
-    )
+async def translate(
+    text: str, target_language: enums.Language = enums.Language.English, **kwargs
+):
     try:
-        lang = langdetect.detect(query)
+        lang = langdetect.detect(text)
     except:
         lang = "en"
 
-    if lang == to:
-        return query
+    if lang == target_language:
+        return text
 
-    languages = {
-        "en": "English",
-        "fa": "Persian",
-    }
-    if not languages.get(to):
-        to = "en"
-    prompt = f"Translate the following text to '{to}': \"{query}\" and answer in json format."
+    if not enums.Language.has_value(target_language):
+        target_language = enums.Language.English
 
-    logging.warning(f"process_task {query}, {to}")
-
-    session = await metis_client.create_session()
-    message = await metis_client.send_message(session, prompt)
-    await metis_client.delete_session(session)
-    resp = message.content
-    return resp.strip('"')
+    return await answer_with_ai(
+        "translate", text=text, target_language=target_language, **kwargs
+    )
 
 
 @cached(ttl=24 * 3600, serializer=PickleSerializer())
