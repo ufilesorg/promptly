@@ -1,45 +1,55 @@
-import json
-import logging
-
-from fastapi import APIRouter, Body, Depends, Request
+from fastapi import APIRouter, Body, Request
 from fastapi_mongo_base._utils.texttools import format_string_keys
 from usso import UserData
 from usso.fastapi import jwt_access_security
 
+from .schemas import Prompt, TranslateRequest, TranslateResponse
 from .services import (
+    answer_image_with_ai,
     answer_with_ai,
-    get_message_from_panel,
-    get_messages_list,
+    get_prompt,
+    get_prompt_list,
     translate,
 )
-from .schemas import TranslateRequest
 
 router = APIRouter(prefix="/ai", tags=["AI"])
 
 
-@router.get("/search")
+@router.get("/search", response_model=list[Prompt])
 async def search_ai_keys(key: str):
-    return await get_messages_list(f"{key}")
+    prompts = await get_prompt_list(key)
+    return prompts
 
 
-@router.get("/{key}/fields")
+@router.get("/{key}/fields", response_model=list[str])
 async def get_ai_keys(key: str):
-    system_prompt = await get_message_from_panel(f"pixiee_ai_system_{key}")
-    user_prompt = await get_message_from_panel(f"pixiee_ai_user_{key}")
-    format_keys = format_string_keys(system_prompt) | format_string_keys(user_prompt)
+    prompt: Prompt = await get_prompt(key)
+    format_keys = format_string_keys(prompt.system) | format_string_keys(prompt.user)
 
     return format_keys
 
 
-@router.post("/translate")
+@router.post("/translate", response_model=TranslateResponse)
 async def translate_with_ai(request: Request, data: TranslateRequest):
     user: UserData = jwt_access_security(request)
     # return await answer_with_ai_route(request, "translate", data)
     return await translate(**data.model_dump())
 
 
-@router.post("/{key:str}")
-async def answer_with_ai_route(request: Request, key: str, data: dict = Body(...)):
+@router.post("/{key:str}", response_model=dict)
+async def answer_with_ai_route(request: Request, key: str, data: dict = Body()):
     # logging.info(f"{key} -> {json.dumps(data, ensure_ascii=False)}")
     user: UserData = jwt_access_security(request)
     return await answer_with_ai(key, **data)
+
+
+@router.post("/image/{key:str}", response_model=dict)
+async def answer_image_ai_route(
+    request: Request,
+    key: str,
+    image_url: str = Body(),
+    data: dict = Body(),
+):
+    # logging.info(f"{key} -> {json.dumps(data, ensure_ascii=False)}")
+    user: UserData = jwt_access_security(request)
+    return await answer_image_with_ai(key, image_url, **data)

@@ -1,18 +1,21 @@
+import base64
 import json
 import logging
 import os
+from io import BytesIO
 
 import langdetect
 from aiocache import cached
 from aiocache.serializers import PickleSerializer
+from core import enums, exceptions
 from fastapi_mongo_base._utils.aionetwork import aio_request
 from fastapi_mongo_base._utils.basic import retry_execution
 from fastapi_mongo_base._utils.texttools import backtick_formatter, format_string_keys
 
-from core import exceptions, enums
+from .schemas import Prompt
 
 
-async def openai_chat(messages: dict, **kwargs):
+async def openai_chat(messages: list[dict], **kwargs):
     import openai
 
     openai_client = openai.AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
@@ -28,7 +31,7 @@ async def openai_chat(messages: dict, **kwargs):
 
 
 @retry_execution(3, delay=5)
-async def metis_chat(messages: dict, **kwargs):
+async def metis_chat(messages: list[dict], **kwargs):
     from metisai.async_metis import AsyncMetisBot
 
     metis_client = AsyncMetisBot(
@@ -58,29 +61,115 @@ async def answer_messages(messages: dict, **kwargs):
         return {"answer": resp_text}
 
 
+def encode_image(image: BytesIO):
+    return base64.b64encode(image.getvalue()).decode("utf-8")
+
+
+async def answer_image(system: str, user: str, image_url: str):
+    # import openai
+
+    # openai_client = openai.AsyncOpenAI(
+    #     api_key=os.getenv("METIS_API_KEY"), base_url="https://api.metisai.ir/openai/v1"
+    # )
+
+    # base64_image = encode_image(image)
+    # logging.info(base64_image[:100])
+
+    # response = await openai_client.chat.completions.create(
+    #     model="gpt-4o",
+    #     messages=[
+    #         {
+    #             "role": "system",
+    #             "content": system,
+    #         },
+    #         {
+    #             "role": "user",
+    #             "content": [
+    #                 {"type": "text", "text": user},
+    #                 {
+    #                     "type": "image_url",
+    #                     "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
+    #                 },
+    #             ],
+    #         },
+    #     ],
+    #     # max_tokens=300,
+    # )
+
+    # resp_text = backtick_formatter(response.choices[0].message.content)
+    # try:
+    #     return json.loads(resp_text)
+    # except json.JSONDecodeError:
+    #     return {"answer": resp_text}
+
+    from metisai.async_metis import AsyncMetisBot
+
+    metis_client = AsyncMetisBot(
+        api_key=os.getenv("METIS_API_KEY"), bot_id=os.getenv("METIS_BOT_ID")
+    )
+
+    try:
+        session = await metis_client.create_session()
+        prompt = "\n\n".join([system, user])
+        response = await metis_client.send_message_with_attachment(
+            session, prompt[:30_000], image_url
+        )
+        await metis_client.delete_session(session)
+        resp_text = backtick_formatter(response.content)
+        return json.loads(resp_text)
+    except json.JSONDecodeError:
+        return {"answer": resp_text}
+    except Exception as e:
+        # logging.error(json.dumps(messages, ensure_ascii=False))
+        logging.error(f"Metis request failed, {e}")
+        raise
+
+
 @cached(ttl=24 * 3600, serializer=PickleSerializer())
-async def answer_with_ai(key, **kwargs):
+async def answer_image_with_ai(key, image_url, **kwargs) -> dict:
     try:
         kwargs["lang"] = kwargs.get("lang", "Persian")
-        system_prompt: str = await get_message_from_panel(
-            f"pixiee_ai_system_{key}", raise_exception=False
-        )
-        user_prompt: str = await get_message_from_panel(
-            f"pixiee_ai_user_{key}", raise_exception=False
-        )
+        prompt: Prompt = await get_prompt(key)
         for k in list(
-            format_string_keys(system_prompt) | format_string_keys(user_prompt)
+            format_string_keys(prompt.system) | format_string_keys(prompt.user)
+        ):
+            kwargs[k] = kwargs.get(k, "")
+
+        # image = await aio_request_binary(url=image_url)
+
+        return await answer_image(
+            prompt.system.format(**kwargs), prompt.user.format(**kwargs), image_url
+        )
+    except Exception as e:
+        import traceback
+
+        traceback_str = "".join(traceback.format_tb(e.__traceback__))
+        logging.error(f"AI request failed for {key},\n{traceback_str}\n{e}")
+        raise exceptions.BaseHTTPException(
+            status_code=500,
+            error="Bad Request",
+            message="AI request failed. Please try again later.",
+        )
+
+
+@cached(ttl=24 * 3600, serializer=PickleSerializer())
+async def answer_with_ai(key, **kwargs) -> dict:
+    try:
+        kwargs["lang"] = kwargs.get("lang", "Persian")
+        prompt: Prompt = await get_prompt(key)
+        for k in list(
+            format_string_keys(prompt.system) | format_string_keys(prompt.user)
         ):
             kwargs[k] = kwargs.get(k, "")
 
         messages = [
             {
                 "role": "system",
-                "content": system_prompt.format(**kwargs),
+                "content": prompt.system.format(**kwargs),
             },
             {
                 "role": "user",
-                "content": user_prompt.format(**kwargs)[:40000],
+                "content": prompt.user.format(**kwargs)[:40000],
             },
         ]
 
@@ -117,40 +206,15 @@ async def translate(
 
 
 @cached(ttl=24 * 3600, serializer=PickleSerializer())
-async def get_config_from_panel(key, raise_exception=True) -> list[str]:
-    url = f"https://message.bot.inbeet.tech/api/messages?filters[key][$eq]=pixiee_config_{key}"
+async def get_prompt(key, raise_exception=True) -> Prompt:
+    url = f"https://message.bot.inbeet.tech/api/prompts?filters[key][$eq]={key}"
     headers = {
         "Authorization": "Bearer " + os.getenv("STRAPI_TOKEN"),
     }
     res = await aio_request(url=url, headers=headers)
     data: list[dict] = res.get("data", [])
     if len(data) == 1:
-        return data[0]
-    if raise_exception:
-        raise exceptions.BaseHTTPException(status_code=404, error="key_not_found")
-
-
-@cached(ttl=24 * 3600, serializer=PickleSerializer())
-async def list_config_from_panel(raise_exception=True) -> list[str]:
-    url = f"https://message.bot.inbeet.tech/api/messages?filters[key][$startsWith]=pixiee_config_"
-    headers = {
-        "Authorization": "Bearer " + os.getenv("STRAPI_TOKEN"),
-    }
-    res = await aio_request(url=url, headers=headers)
-    data: list[dict] = res.get("data", [])
-    return data
-
-
-@cached(ttl=24 * 3600, serializer=PickleSerializer())
-async def get_message_from_panel(key, raise_exception=True) -> list[str]:
-    url = f"https://message.bot.inbeet.tech/api/messages?filters[key][$eq]={key}"
-    headers = {
-        "Authorization": "Bearer " + os.getenv("STRAPI_TOKEN"),
-    }
-    res = await aio_request(url=url, headers=headers)
-    data: list[dict] = res.get("data", [])
-    if len(data) == 1:
-        return data[0].get("attributes", {}).get("body", {})
+        return Prompt(**data[0].get("attributes", {}))
     if raise_exception:
         raise exceptions.BaseHTTPException(
             status_code=404, error="key_not_found", message=f"Key {key} not found"
@@ -158,19 +222,18 @@ async def get_message_from_panel(key, raise_exception=True) -> list[str]:
 
 
 @cached(ttl=24 * 3600, serializer=PickleSerializer())
-async def get_messages_list(keys: list[str], raise_exception=True) -> list[str]:
+async def get_prompt_list(keys: list[str], raise_exception=True) -> list[Prompt]:
     if isinstance(keys, str):
         keys = [keys]
     params = {}
     for i, key in enumerate(keys):
         params[f"filters[$and][{i}][key][$contains]"] = key
 
-    url = f"https://message.bot.inbeet.tech/api/messages"
+    url = f"https://message.bot.inbeet.tech/api/prompts"
     headers = {
         "Authorization": "Bearer " + os.getenv("STRAPI_TOKEN"),
     }
     res = await aio_request(url=url, headers=headers, params=params)
-    data: list[dict] = res.get("data", [])
-    return {
-        "_".join(d.get("attributes", {}).get("key", {}).split("_")[3:]) for d in data
-    }
+    data: list[Prompt] = res.get("data", [])
+    logging.info(data)
+    return [Prompt(**d.get("attributes", {})) for d in data]
