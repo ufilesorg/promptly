@@ -48,7 +48,7 @@ async def answer_image_ai_route(
     request: Request,
     key: str,
     image_url: str = Body(),
-    data: dict = Body(),
+    data: dict = Body(default={}),
 ):
     # logging.info(f"{key} -> {json.dumps(data, ensure_ascii=False)}")
     user: UserData = jwt_access_security(request)

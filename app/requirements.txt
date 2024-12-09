@@ -17,8 +17,10 @@ beanie
 fastapi-mongo-base
 ufaas-fastapi-business
 
+apscheduler
+pillow
+
+openai
 metisai
 langdetect
-pillow
-apscheduler
 replicate

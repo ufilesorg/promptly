@@ -8,7 +8,7 @@ import langdetect
 from aiocache import cached
 from aiocache.serializers import PickleSerializer
 from core import enums, exceptions
-from fastapi_mongo_base._utils.aionetwork import aio_request
+from fastapi_mongo_base._utils.aionetwork import aio_request, aio_request_binary
 from fastapi_mongo_base._utils.basic import retry_execution
 from fastapi_mongo_base._utils.texttools import backtick_formatter, format_string_keys
 
@@ -18,13 +18,18 @@ from .schemas import Prompt
 async def openai_chat(messages: list[dict], **kwargs):
     import openai
 
-    openai_client = openai.AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+    metis_base_url = "https://api.metisai.ir/openai/v1"
+
+    openai_client = openai.AsyncOpenAI(
+        # api_key=os.environ.get("OPENAI_API_KEY")
+        api_key=os.getenv("METIS_API_KEY"),
+        base_url=metis_base_url,
+    )
     response = await openai_client.chat.completions.create(
         model="gpt-4o",
         messages=messages,
-        max_tokens=4095,
-        temperature=0.1,
-        # response_format={"type": "json_object"},
+        max_tokens=kwargs.get("max_tokens"),
+        temperature=kwargs.get("temperature", 0.1),
     )
     resp_text = backtick_formatter(response.choices[0].message.content)
     return resp_text
@@ -61,46 +66,54 @@ async def answer_messages(messages: dict, **kwargs):
         return {"answer": resp_text}
 
 
-def encode_image(image: BytesIO):
-    return base64.b64encode(image.getvalue()).decode("utf-8")
+async def get_image(url):
+    from PIL import Image
+    from utils.imagetools import resize_image
+
+    buffered = await aio_request_binary(url=url)
+    encoded = base64.b64encode(buffered.getvalue()).decode()
+    while len(encoded) > 250 * 1024:
+        image = Image.open(buffered)
+        image = resize_image(image, image.width * 4 // 5)
+        buffered = BytesIO()
+        image.save(buffered, format="JPEG")
+        encoded = base64.b64encode(buffered.getvalue()).decode()
+
+    return encoded
 
 
-async def answer_image(system: str, user: str, image_url: str):
-    # import openai
-
-    # openai_client = openai.AsyncOpenAI(
-    #     api_key=os.getenv("METIS_API_KEY"), base_url="https://api.metisai.ir/openai/v1"
-    # )
-
-    # base64_image = encode_image(image)
-    # logging.info(base64_image[:100])
-
-    # response = await openai_client.chat.completions.create(
-    #     model="gpt-4o",
-    #     messages=[
-    #         {
-    #             "role": "system",
-    #             "content": system,
-    #         },
-    #         {
-    #             "role": "user",
-    #             "content": [
-    #                 {"type": "text", "text": user},
-    #                 {
-    #                     "type": "image_url",
-    #                     "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
-    #                 },
-    #             ],
-    #         },
-    #     ],
-    #     # max_tokens=300,
-    # )
-
-    # resp_text = backtick_formatter(response.choices[0].message.content)
-    # try:
-    #     return json.loads(resp_text)
-    # except json.JSONDecodeError:
-    #     return {"answer": resp_text}
+async def answer_image(system: str, user: str, image_url: str, low_res=True, **kwargs):
+    encoded_image = await get_image(image_url)
+    messages = [
+        {
+            "role": "system",
+            "content": system,
+        },
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": user},
+                {
+                    "type": "image_url",
+                    "image_url": (
+                        {"url": f"data:image/jpeg;base64,{encoded_image}"}
+                        | {"detail": "low"}
+                        if low_res
+                        else {}
+                    ),
+                },
+            ],
+        },
+    ]
+    try:
+        resp_text = await openai_chat(messages, **kwargs)
+        return json.loads(resp_text)
+    except json.JSONDecodeError:
+        return {"answer": resp_text}
+    except Exception as e:
+        # logging.error(json.dumps(messages, ensure_ascii=False))
+        logging.error(f"Metis request failed, {e}")
+        raise
 
     from metisai.async_metis import AsyncMetisBot
 
@@ -138,7 +151,10 @@ async def answer_image_with_ai(key, image_url, **kwargs) -> dict:
         # image = await aio_request_binary(url=image_url)
 
         return await answer_image(
-            prompt.system.format(**kwargs), prompt.user.format(**kwargs), image_url
+            prompt.system.format(**kwargs),
+            prompt.user.format(**kwargs),
+            image_url,
+            **kwargs,
         )
     except Exception as e:
         import traceback
