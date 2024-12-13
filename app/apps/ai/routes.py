@@ -53,3 +53,9 @@ async def answer_image_ai_route(
     # logging.info(f"{key} -> {json.dumps(data, ensure_ascii=False)}")
     user: UserData = jwt_access_security(request)
     return await answer_image_with_ai(key, image_url, **data)
+
+
+@router.post("/search/{key}", response_model=dict)
+async def search_with_ai_route(request: Request, key: str, data: dict = Body()):
+    user: UserData = jwt_access_security(request)
+    return await answer_with_ai(key, engine="perplexity", **data)

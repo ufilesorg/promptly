@@ -12,21 +12,20 @@ from fastapi_mongo_base._utils.aionetwork import aio_request, aio_request_binary
 from fastapi_mongo_base._utils.basic import retry_execution
 from fastapi_mongo_base._utils.texttools import backtick_formatter, format_string_keys
 
+from .engines import AIEngine
 from .schemas import Prompt
 
 
-async def openai_chat(messages: list[dict], **kwargs):
+@retry_execution(3, delay=5)
+async def openai_chat(messages: list[dict], engine="metis", **kwargs):
     import openai
 
-    metis_base_url = "https://api.metisai.ir/openai/v1"
+    engine = AIEngine.get_by_name(engine)
 
-    openai_client = openai.AsyncOpenAI(
-        # api_key=os.environ.get("OPENAI_API_KEY")
-        api_key=os.getenv("METIS_API_KEY"),
-        base_url=metis_base_url,
-    )
+    # api_key=os.environ.get("OPENAI_API_KEY")
+    openai_client = openai.AsyncOpenAI(**engine.get_dict())
     response = await openai_client.chat.completions.create(
-        model="gpt-4o",
+        model=engine.model,
         messages=messages,
         max_tokens=kwargs.get("max_tokens"),
         temperature=kwargs.get("temperature", 0.1),
@@ -57,9 +56,9 @@ async def metis_chat(messages: list[dict], **kwargs):
         raise
 
 
-async def answer_messages(messages: dict, **kwargs):
-    # resp_text = await openai_chat(messages, **kwargs)
-    resp_text = await metis_chat(messages, **kwargs)
+async def answer_messages(messages: dict, engine="metis", **kwargs):
+    resp_text = await openai_chat(messages, engine, **kwargs)
+    # resp_text = await metis_chat(messages, **kwargs)
     try:
         return json.loads(resp_text)
     except json.JSONDecodeError:
@@ -169,7 +168,7 @@ async def answer_image_with_ai(key, image_url, **kwargs) -> dict:
 
 
 @cached(ttl=24 * 3600, serializer=PickleSerializer())
-async def answer_with_ai(key, **kwargs) -> dict:
+async def answer_with_ai(key, engine="metis", **kwargs) -> dict:
     try:
         kwargs["lang"] = kwargs.get("lang", "Persian")
         prompt: Prompt = await get_prompt(key)
@@ -189,7 +188,7 @@ async def answer_with_ai(key, **kwargs) -> dict:
             },
         ]
 
-        return await answer_messages(messages, **kwargs)
+        return await answer_messages(messages, engine, **kwargs)
     except Exception as e:
         import traceback
 
