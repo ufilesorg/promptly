@@ -23,6 +23,7 @@ class AIEngine(metaclass=Singleton):
         for subclass in cls.__subclasses__():
             if subclass.__name__.lower() == name.lower():
                 return subclass()
+        raise ValueError(f"Unknown engine name: {name}")
 
 
 class Perplexity(AIEngine):
@@ -41,6 +42,15 @@ class Perplexity(AIEngine):
 class Metis(AIEngine):
     def __init__(self):
         super().__init__(os.getenv("METIS_API_KEY"), "https://api.metisai.ir/openai/v1")
+
+
+class MetisVision(AIEngine):
+    def __init__(self):
+        super().__init__(os.getenv("METIS_API_KEY"), "https://api.metisai.ir/openai/v1")
+
+    @property
+    def model(self):
+        return "gpt-4o-mini"
 
 
 class AvvalAI(AIEngine):

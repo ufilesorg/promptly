@@ -7,10 +7,10 @@ from io import BytesIO
 import langdetect
 from aiocache import cached
 from aiocache.serializers import PickleSerializer
-from core import enums, exceptions
-from fastapi_mongo_base._utils.aionetwork import aio_request, aio_request_binary
-from fastapi_mongo_base._utils.basic import retry_execution
-from fastapi_mongo_base._utils.texttools import backtick_formatter, format_string_keys
+from fastapi_mongo_base.core import enums, exceptions
+from fastapi_mongo_base.utils.aionetwork import aio_request, aio_request_binary
+from fastapi_mongo_base.utils.basic import retry_execution
+from fastapi_mongo_base.utils.texttools import backtick_formatter, format_string_keys
 
 from .engines import AIEngine
 from .schemas import Prompt
@@ -70,9 +70,13 @@ async def get_image(url):
     from utils.imagetools import resize_image
 
     buffered = await aio_request_binary(url=url)
+    image = Image.open(buffered)
+    if image.mode == "RGBA":
+        image = image.convert("RGB")
+    image.save(buffered, format="JPEG")
     encoded = base64.b64encode(buffered.getvalue()).decode()
+
     while len(encoded) > 250 * 1024:
-        image = Image.open(buffered)
         image = resize_image(image, image.width * 4 // 5)
         buffered = BytesIO()
         image.save(buffered, format="JPEG")
@@ -96,16 +100,14 @@ async def answer_image(system: str, user: str, image_url: str, low_res=True, **k
                     "type": "image_url",
                     "image_url": (
                         {"url": f"data:image/jpeg;base64,{encoded_image}"}
-                        | {"detail": "low"}
-                        if low_res
-                        else {}
+                        | ({"detail": "low"} if low_res else {})
                     ),
                 },
             ],
         },
     ]
     try:
-        resp_text = await openai_chat(messages, **kwargs)
+        resp_text = await openai_chat(messages, engine="metisvision", **kwargs)
         return json.loads(resp_text)
     except json.JSONDecodeError:
         return {"answer": resp_text}

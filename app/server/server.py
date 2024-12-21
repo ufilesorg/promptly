@@ -4,20 +4,20 @@ from contextlib import asynccontextmanager
 
 import fastapi
 import pydantic
-from core import exceptions
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi_mongo_base.core import exceptions
 from json_advanced import dumps
+from ufaas_fastapi_business.core import middlewares
 from usso.exceptions import USSOException
 
-from . import config, db, middlewares
+from . import config
 
 
 @asynccontextmanager
 async def lifespan(app: fastapi.FastAPI):  # type: ignore
     """Initialize application services."""
     config.Settings().config_logger()
-    await db.init_db()
 
     logging.info("Startup complete")
     yield

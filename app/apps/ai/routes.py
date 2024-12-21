@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Body, Request
-from fastapi_mongo_base._utils.texttools import format_string_keys
+from fastapi_mongo_base.utils.texttools import format_string_keys
 from usso import UserData
 from usso.fastapi import jwt_access_security
 
