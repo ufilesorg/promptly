@@ -65,16 +65,22 @@ async def answer_messages(messages: dict, engine="metis", **kwargs):
         return {"answer": resp_text}
 
 
-async def get_image(url):
+async def get_image(url: str):
     from PIL import Image
     from utils.imagetools import resize_image
 
-    buffered = await aio_request_binary(url=url)
-    image = Image.open(buffered)
-    if image.mode == "RGBA":
-        image = image.convert("RGB")
-    image.save(buffered, format="JPEG")
-    encoded = base64.b64encode(buffered.getvalue()).decode()
+    # add base64 check
+    if url.startswith("data:image"):
+        encoded = url.split(",")[1]
+        buffered = BytesIO(base64.b64decode(encoded))
+        image = Image.open(buffered)
+    else:
+        buffered = await aio_request_binary(url=url)
+        image = Image.open(buffered)
+        if image.mode == "RGBA":
+            image = image.convert("RGB")
+        image.save(buffered, format="JPEG")
+        encoded = base64.b64encode(buffered.getvalue()).decode()
 
     while len(encoded) > 250 * 1024:
         image = resize_image(image, image.width * 4 // 5)
