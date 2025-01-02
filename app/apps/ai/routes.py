@@ -32,13 +32,11 @@ async def get_ai_keys(key: str):
 @router.post("/translate", response_model=TranslateResponse)
 async def translate_with_ai(request: Request, data: TranslateRequest):
     user: UserData = jwt_access_security(request)
-    # return await answer_with_ai_route(request, "translate", data)
     return await translate(**data.model_dump())
 
 
 @router.post("/{key:str}", response_model=dict)
 async def answer_with_ai_route(request: Request, key: str, data: dict = Body()):
-    # logging.info(f"{key} -> {json.dumps(data, ensure_ascii=False)}")
     user: UserData = jwt_access_security(request)
     return await answer_with_ai(key, **data)
 

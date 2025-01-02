@@ -9,7 +9,7 @@ from aiocache import cached
 from aiocache.serializers import PickleSerializer
 from fastapi_mongo_base.core import enums, exceptions
 from fastapi_mongo_base.utils.aionetwork import aio_request, aio_request_binary
-from fastapi_mongo_base.utils.basic import retry_execution
+from fastapi_mongo_base.utils.basic import retry_execution, try_except_wrapper
 from fastapi_mongo_base.utils.texttools import backtick_formatter, format_string_keys
 
 from .engines import AIEngine
@@ -34,6 +34,7 @@ async def openai_chat(messages: list[dict], engine="metis", **kwargs):
     return resp_text
 
 
+@try_except_wrapper
 @retry_execution(3, delay=5)
 async def metis_chat(messages: list[dict], **kwargs):
     from metisai.async_metis import AsyncMetisBot
@@ -41,19 +42,13 @@ async def metis_chat(messages: list[dict], **kwargs):
     metis_client = AsyncMetisBot(
         api_key=os.getenv("METIS_API_KEY"), bot_id=os.getenv("METIS_BOT_ID")
     )
-
-    try:
-        user_id = kwargs.get("user_id")
-        session = await metis_client.create_session(user_id)
-        prompt = "\n\n".join([message["content"] for message in messages])
-        response = await metis_client.send_message(session, prompt[:30_000])
-        await metis_client.delete_session(session)
-        resp_text = backtick_formatter(response.content)
-        return resp_text
-    except Exception as e:
-        logging.error(json.dumps(messages, ensure_ascii=False))
-        logging.error(f"Metis request failed, {e}")
-        raise
+    user_id = kwargs.get("user_id")
+    session = await metis_client.create_session(user_id)
+    prompt = "\n\n".join([message["content"] for message in messages])
+    response = await metis_client.send_message(session, prompt[:30_000])
+    await metis_client.delete_session(session)
+    resp_text = backtick_formatter(response.content)
+    return resp_text
 
 
 async def answer_messages(messages: dict, engine="metis", **kwargs):
@@ -67,6 +62,7 @@ async def answer_messages(messages: dict, engine="metis", **kwargs):
 
 async def get_image(url: str):
     from PIL import Image
+
     from utils.imagetools import resize_image
 
     # add base64 check
