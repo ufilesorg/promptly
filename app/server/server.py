@@ -4,5 +4,5 @@ from apps.ai.routes import router as ai_router
 
 from . import config
 
-app = app_factory.create_app(settings=config.Settings(), serve_coverage=True)
+app = app_factory.create_app(settings=config.Settings(), serve_coverage=False)
 app.include_router(ai_router, prefix=config.Settings.base_path)
