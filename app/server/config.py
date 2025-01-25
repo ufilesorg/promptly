@@ -13,4 +13,3 @@ dotenv.load_dotenv()
 class Settings(BaseSettings):
     base_dir: Path = Path(__file__).resolve().parent.parent
     base_path: str = "/v1/apps/promptly"
-    update_time: int = 10

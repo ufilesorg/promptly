@@ -1,15 +1,15 @@
-import base64
 import json
 import logging
 import os
-from io import BytesIO
 
 import langdetect
 from aiocache import cached
 from aiocache.serializers import PickleSerializer
 from fastapi_mongo_base.core import enums, exceptions
-from fastapi_mongo_base.utils.aionetwork import aio_request, aio_request_binary
+from fastapi_mongo_base.utils import basic
+from fastapi_mongo_base.utils.aionetwork import aio_request
 from fastapi_mongo_base.utils.basic import retry_execution, try_except_wrapper
+from fastapi_mongo_base.utils.imagetools import download_image_base64
 from fastapi_mongo_base.utils.texttools import backtick_formatter, format_string_keys
 
 from .engines import AIEngine
@@ -55,40 +55,19 @@ async def answer_messages(messages: dict, engine="metis", **kwargs):
     resp_text = await openai_chat(messages, engine, **kwargs)
     # resp_text = await metis_chat(messages, **kwargs)
     try:
-        return json.loads(resp_text)
+        return json.loads(
+            resp_text.replace("True", "true")
+            .replace("False", "false")
+            .replace("None", "null")
+        )
     except json.JSONDecodeError:
         return {"answer": resp_text}
 
 
-async def get_image(url: str):
-    from PIL import Image
-
-    from utils.imagetools import resize_image
-
-    # add base64 check
-    if url.startswith("data:image"):
-        encoded = url.split(",")[1]
-        buffered = BytesIO(base64.b64decode(encoded))
-        image = Image.open(buffered)
-    else:
-        buffered = await aio_request_binary(url=url)
-        image = Image.open(buffered)
-        if image.mode == "RGBA":
-            image = image.convert("RGB")
-        image.save(buffered, format="JPEG")
-        encoded = base64.b64encode(buffered.getvalue()).decode()
-
-    while len(encoded) > 250 * 1024:
-        image = resize_image(image, image.width * 4 // 5)
-        buffered = BytesIO()
-        image.save(buffered, format="JPEG")
-        encoded = base64.b64encode(buffered.getvalue()).decode()
-
-    return encoded
-
-
 async def answer_image(system: str, user: str, image_url: str, low_res=True, **kwargs):
-    encoded_image = await get_image(image_url)
+    encoded_image = await download_image_base64(
+        image_url, max_width=768, max_size_kb=240
+    )
     messages = [
         {
             "role": "system",
@@ -101,8 +80,7 @@ async def answer_image(system: str, user: str, image_url: str, low_res=True, **k
                 {
                     "type": "image_url",
                     "image_url": (
-                        {"url": f"data:image/jpeg;base64,{encoded_image}"}
-                        | ({"detail": "low"} if low_res else {})
+                        {"url": encoded_image} | ({"detail": "low"} if low_res else {})
                     ),
                 },
             ],
@@ -142,67 +120,42 @@ async def answer_image(system: str, user: str, image_url: str, low_res=True, **k
 
 
 @cached(ttl=24 * 3600, serializer=PickleSerializer())
+@basic.try_except_wrapper
 async def answer_image_with_ai(key, image_url, **kwargs) -> dict:
-    try:
-        kwargs["lang"] = kwargs.get("lang", "Persian")
-        prompt: Prompt = await get_prompt(key)
-        for k in list(
-            format_string_keys(prompt.system) | format_string_keys(prompt.user)
-        ):
-            kwargs[k] = kwargs.get(k, "")
+    kwargs["lang"] = kwargs.get("lang", "Persian")
+    prompt: Prompt = await get_prompt(key)
+    for k in list(format_string_keys(prompt.system) | format_string_keys(prompt.user)):
+        kwargs[k] = kwargs.get(k, "")
 
-        # image = await aio_request_binary(url=image_url)
+    # image = await aio_request_binary(url=image_url)
 
-        return await answer_image(
-            prompt.system.format(**kwargs),
-            prompt.user.format(**kwargs),
-            image_url,
-            **kwargs,
-        )
-    except Exception as e:
-        import traceback
-
-        traceback_str = "".join(traceback.format_tb(e.__traceback__))
-        logging.error(f"AI request failed for {key},\n{traceback_str}\n{e}")
-        raise exceptions.BaseHTTPException(
-            status_code=500,
-            error="Bad Request",
-            message="AI request failed. Please try again later.",
-        )
+    return await answer_image(
+        prompt.system.format(**kwargs),
+        prompt.user.format(**kwargs),
+        image_url,
+        **kwargs,
+    )
 
 
 @cached(ttl=24 * 3600, serializer=PickleSerializer())
+@basic.try_except_wrapper
 async def answer_with_ai(key, engine="metis", **kwargs) -> dict:
-    try:
-        kwargs["lang"] = kwargs.get("lang", "Persian")
-        prompt: Prompt = await get_prompt(key)
-        for k in list(
-            format_string_keys(prompt.system) | format_string_keys(prompt.user)
-        ):
-            kwargs[k] = kwargs.get(k, "")
+    kwargs["lang"] = kwargs.get("lang", "Persian")
+    prompt: Prompt = await get_prompt(key)
+    for k in list(format_string_keys(prompt.system) | format_string_keys(prompt.user)):
+        kwargs[k] = kwargs.get(k, "")
 
-        messages = [
-            {
-                "role": "system",
-                "content": prompt.system.format(**kwargs),
-            },
-            {
-                "role": "user",
-                "content": prompt.user.format(**kwargs)[:40000],
-            },
-        ]
-
-        return await answer_messages(messages, engine, **kwargs)
-    except Exception as e:
-        import traceback
-
-        traceback_str = "".join(traceback.format_tb(e.__traceback__))
-        logging.error(f"AI request failed for {key},\n{traceback_str}\n{e}")
-        raise exceptions.BaseHTTPException(
-            status_code=500,
-            error="Bad Request",
-            message="AI request failed. Please try again later.",
-        )
+    messages = [
+        {
+            "role": "system",
+            "content": prompt.system.format(**kwargs),
+        },
+        {
+            "role": "user",
+            "content": prompt.user.format(**kwargs)[:40000],
+        },
+    ]
+    return await answer_messages(messages, engine, **kwargs)
 
 
 async def translate(
@@ -256,3 +209,48 @@ async def get_prompt_list(keys: list[str], raise_exception=True) -> list[Prompt]
     data: list[Prompt] = res.get("data", [])
     logging.info(data)
     return [Prompt(**d.get("attributes", {})) for d in data]
+
+
+async def answer_images(
+    system: str, user: str, image_urls: str, low_res=True, **kwargs
+):
+    content = [{"type": "text", "text": user}]
+    for image_url in image_urls:
+        encoded_image = await download_image_base64(image_url, max_size_kb=100)
+        content.append(
+            {
+                "type": "image_url",
+                "image_url": (
+                    {"url": encoded_image} | ({"detail": "low"} if low_res else {})
+                ),
+            }
+        )
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": content},
+    ]
+    try:
+        resp_text = await openai_chat(messages, engine="metisvision", **kwargs)
+        return json.loads(resp_text)
+    except json.JSONDecodeError:
+        return {"answer": resp_text}
+    except Exception as e:
+        # logging.error(json.dumps(messages, ensure_ascii=False))
+        logging.error(f"Metis request failed, {e}")
+        raise
+
+
+@basic.try_except_wrapper
+@cached(ttl=24 * 3600, serializer=PickleSerializer())
+async def answer_images_with_ai(key, image_urls, **kwargs) -> dict:
+    kwargs["lang"] = kwargs.get("lang", "Persian")
+    prompt: Prompt = await get_prompt(key)
+    for k in list(format_string_keys(prompt.system) | format_string_keys(prompt.user)):
+        kwargs[k] = kwargs.get(k, "")
+
+    return await answer_images(
+        prompt.system.format(**kwargs),
+        prompt.user.format(**kwargs),
+        image_urls,
+        **kwargs,
+    )

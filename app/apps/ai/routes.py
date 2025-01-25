@@ -3,9 +3,10 @@ from fastapi_mongo_base.utils.texttools import format_string_keys
 from usso import UserData
 from usso.fastapi import jwt_access_security
 
-from .schemas import Prompt, TranslateRequest, TranslateResponse
+from .schemas import MultipleImagePrompt, Prompt, TranslateRequest, TranslateResponse
 from .services import (
     answer_image_with_ai,
+    answer_images_with_ai,
     answer_with_ai,
     get_prompt,
     get_prompt_list,
@@ -51,6 +52,13 @@ async def answer_image_ai_route(
     # logging.info(f"{key} -> {json.dumps(data, ensure_ascii=False)}")
     user: UserData = jwt_access_security(request)
     return await answer_image_with_ai(key, image_url, **data)
+
+
+@router.post("/images/{key:str}", response_model=dict)
+async def answer_images_ai_route(request: Request, data: MultipleImagePrompt):
+    # logging.info(f"{key} -> {json.dumps(data, ensure_ascii=False)}")
+    user: UserData = jwt_access_security(request)
+    return await answer_images_with_ai(data.key, data.image_urls, **data)
 
 
 @router.post("/search/{key}", response_model=dict)

@@ -1,6 +1,5 @@
-from fastapi_mongo_base.core import app_factory
-
 from apps.ai.routes import router as ai_router
+from fastapi_mongo_base.core import app_factory
 
 from . import config
 

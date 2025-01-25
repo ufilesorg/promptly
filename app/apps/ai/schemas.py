@@ -23,3 +23,10 @@ class Prompt(BaseModel):
     @field_validator("system")
     def check_system(cls, value):
         return value or ""
+
+
+class MultipleImagePrompt(BaseModel):
+    key: str
+    system: str | None
+    user: str
+    image_urls: list[str]

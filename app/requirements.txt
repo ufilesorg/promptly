@@ -1,6 +1,6 @@
 uvicorn
 fastapi
-pydantic
+pydantic[email]
 httpx
 
 singleton_package
@@ -17,14 +17,17 @@ fastapi-mongo-base
 ufaas-fastapi-business
 
 apscheduler
-pytz
 pillow
+pytz
 
-ufiles
-ufaas
 usso[fastapi]
+ufaas
+ufiles
 
 langdetect
 openai
 metisai
 replicate
+
+google-api-python-client
+google-generativeai
