@@ -2,13 +2,13 @@ from fastapi import APIRouter, Body, Request
 from fastapi_mongo_base.utils.texttools import format_string_keys
 from usso import UserData
 from usso.fastapi import jwt_access_security
+from utils.messages import get_prompt
 
 from .schemas import MultipleImagePrompt, Prompt, TranslateRequest, TranslateResponse
 from .services import (
     answer_image_with_ai,
     answer_vision_with_ai,
     answer_with_ai,
-    get_prompt,
     get_prompt_list,
     translate,
 )
@@ -16,7 +16,7 @@ from .services import (
 router = APIRouter(prefix="/ai", tags=["AI"])
 
 
-@router.get("/search", response_model=list[Prompt])
+@router.get("/", response_model=list[Prompt])
 async def search_ai_keys(key: str):
     prompts = await get_prompt_list([key])
     return prompts
@@ -24,8 +24,10 @@ async def search_ai_keys(key: str):
 
 @router.get("/{key}/fields", response_model=list[str])
 async def get_ai_keys(key: str):
-    prompt: Prompt = await get_prompt(key)
-    format_keys = format_string_keys(prompt.system) | format_string_keys(prompt.user)
+    prompt: dict = await get_prompt(key)
+    format_keys = format_string_keys(prompt.get("system", "")) | format_string_keys(
+        prompt.get("user", "")
+    )
 
     return format_keys
 
