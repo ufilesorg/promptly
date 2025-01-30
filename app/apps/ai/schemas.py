@@ -7,7 +7,11 @@ class TranslateRequest(BaseModel):
     target_language: Language = Language.English
 
 
-class TranslateResponse(BaseModel):
+class AIResponse(BaseModel):
+    price: float = 0
+
+
+class TranslateResponse(AIResponse):
     translated_text: str
 
 
@@ -25,7 +29,7 @@ class Prompt(BaseModel):
         return value or ""
 
 
-class MultipleImagePrompt(BaseModel):
+class MultipleImagePrompt(AIResponse):
     key: str
     system: str | None
     user: str
