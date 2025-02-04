@@ -1,7 +1,8 @@
+import asyncio
 import json
 import logging
 import os
-
+import time
 import langdetect
 from aiocache import cached
 from fastapi_mongo_base.core import enums
@@ -13,21 +14,21 @@ from .schemas import Prompt
 
 
 @cached(ttl=24 * 3600)
-async def get_prompt(key, raise_exception=True, **kwargs) -> tuple[str, str]:
-    prompt_dict = await messages.get_prompt(key, raise_exception=raise_exception)
-    prompt = Prompt(**prompt_dict)
+async def get_prompt(key, raise_exception=True, **kwargs) -> tuple[str, str, str]:
+    prompt_dict: dict = await messages.get_prompt(key, raise_exception=raise_exception)
 
     kwargs["lang"] = kwargs.get("lang", "Persian")
     for k in list(
-        texttools.format_string_keys(prompt.system)
-        | texttools.format_string_keys(prompt.user)
+        texttools.format_string_keys(prompt_dict.get("system") or "")
+        | texttools.format_string_keys(prompt_dict.get("user") or "")
     ):
         kwargs[k] = kwargs.get(k, "")
 
-    system = prompt.system.format(**kwargs)
-    user = prompt.user.format(**kwargs)
+    system: str = (prompt_dict.get("system") or "").format(**kwargs)
+    user: str = (prompt_dict.get("user") or "").format(**kwargs)[:40000]
+    model_name: str = prompt_dict.get("model_name", "gpt-4o")
 
-    return system, user
+    return system, user, model_name
 
 
 async def get_prompt_list(keys: list[str], raise_exception=True) -> list[Prompt]:
@@ -36,110 +37,147 @@ async def get_prompt_list(keys: list[str], raise_exception=True) -> list[Prompt]
     return [Prompt(**d.get("attributes", {})) for d in data]
 
 
+def messages_gemini(system, user, encoded_images, **kwargs):
+    res = [system, user] if system else [user]
+    for encoded_image in encoded_images:
+        res.append({"mime_type": "image/jpeg", "data": encoded_image})
+    return res
+
+
+def messages_openai(system, user, encoded_images, low_res=True, **kwargs):
+    if not encoded_images:
+        return [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user[:40000]},
+        ]
+
+    low_res_dict = {"detail": "low"} if low_res else {}
+    images = [
+        {"type": "image_url", "image_url": {"url": image, **low_res_dict}}
+        for image in encoded_images
+    ]
+    return [
+        {"role": "system", "content": system},
+        {
+            "role": "user",
+            "content": [{"type": "text", "text": user[:40000]}, *images],
+        },
+    ]
+
+
+async def make_messages(
+    key: str, *, image_urls: list[str] = [], low_res: bool = True, **kwargs
+) -> tuple[list[dict], str]:
+    system, user, model_name = await get_prompt(key, **kwargs)
+
+    encoded_images = await asyncio.gather(
+        *[
+            imagetools.download_image_base64(
+                image_url,
+                max_size_kb=100,
+                format="JPEG",
+                include_base64_header=False,
+                timeout=30,
+            )
+            for image_url in image_urls
+        ]
+    )
+    if model_name.startswith("gemini"):
+        messages = messages_gemini(system, user, encoded_images, **kwargs)
+        return messages, model_name
+
+    messages = messages_openai(system, user, encoded_images, low_res=low_res, **kwargs)
+    return messages, model_name
+
+
 @basic.retry_execution(3, delay=5)
-async def openai_chat(messages: list[dict], engine="metis", **kwargs):
+async def answer_openai(
+    messages: list[dict], image_count: int, model_name: str, **kwargs
+):
     import openai
 
-    engine = AIEngine.get_by_name(engine)
+    engine = AIEngine.get_by_name(model_name)
 
     # api_key=os.environ.get("OPENAI_API_KEY")
     openai_client = openai.AsyncOpenAI(**engine.get_dict())
     response = await openai_client.chat.completions.create(
-        model=engine.model,
+        model=model_name,
         messages=messages,
         max_tokens=kwargs.get("max_tokens"),
         temperature=kwargs.get("temperature", 0.1),
     )
-    resp_text = texttools.backtick_formatter(response.choices[0].message.content)
     coins = engine.get_price(
         response.usage.prompt_tokens,
         response.usage.completion_tokens,
-        image_count=kwargs.get("image_count", 0),
+        image_count=image_count,
     )
-    return resp_text, coins
+    try:
+        resp = texttools.json_extractor(response.choices[0].message.content)
+        return resp | {"coins": coins, "model": model_name}
+    except json.JSONDecodeError:
+        return {
+            "answer": texttools.backtick_formatter(response.choices[0].message.content),
+            "coins": coins,
+            "model": model_name,
+        }
+    except Exception as e:
+        logging.error(f"OpenAI request failed, {type(e)} {e}")
+        raise
 
 
 @basic.retry_execution(3, delay=5)
-async def metis_chat(messages: list[dict], **kwargs):
-    from metisai.async_metis import AsyncMetisBot
+async def answer_gemini(
+    messages: list[dict], image_count: int, model_name="gemini-1.5-flash", **kwargs
+):
+    import google.generativeai as genai
+    from google.api_core.client_options import ClientOptions
 
-    metis_client = AsyncMetisBot(
-        api_key=os.getenv("METIS_API_KEY"), bot_id=os.getenv("METIS_BOT_ID")
+    genai.configure(
+        api_key=os.getenv("METIS_API_KEY"),
+        transport="rest",
+        client_options=ClientOptions(api_endpoint="https://api.metisai.ir"),
     )
-    user_id = kwargs.get("user_id")
-    session = await metis_client.create_session(user_id)
-    prompt = "\n\n".join([message["content"] for message in messages])
-    response = await metis_client.send_message(session, prompt[:30_000])
-    await metis_client.delete_session(session)
-    resp_text = texttools.backtick_formatter(response.content)
-    return resp_text
+    # genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+    model = genai.GenerativeModel(model_name)
+    response = model.generate_content(messages)
 
-
-async def answer_messages(messages: dict, engine="metis", **kwargs):
-    # resp_text = await metis_chat(messages, **kwargs)
-    try:
-        resp_text, coins = await openai_chat(messages, engine, **kwargs)
-        return json.loads(
-            resp_text.replace("True", "true")
-            .replace("False", "false")
-            .replace("None", "null")
-        ) | {"coins": coins}
-    except json.JSONDecodeError:
-        return {"answer": resp_text}
-
-
-async def answer_image(system: str, user: str, image_url: str, low_res=True, **kwargs):
-    encoded_image = await imagetools.download_image_base64(
-        image_url, max_width=768, max_size_kb=240
+    engine = AIEngine.get_by_name(model_name)
+    coins = engine.get_price(
+        response.usage_metadata.prompt_token_count,
+        response.usage_metadata.candidates_token_count,
+        image_count=image_count,
     )
-    messages = [
-        {
-            "role": "system",
-            "content": system,
-        },
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": user},
-                {
-                    "type": "image_url",
-                    "image_url": (
-                        {"url": encoded_image} | ({"detail": "low"} if low_res else {})
-                    ),
-                },
-            ],
-        },
-    ]
     try:
-        resp_text, coins = await openai_chat(
-            messages, engine="metisvision", image_count=1, **kwargs
-        )
-        return json.loads(resp_text) | {"coins": coins}
+        resp = texttools.json_extractor(response.text)
+        return resp | {"coins": coins, "model": model_name}
     except json.JSONDecodeError:
-        return {"answer": resp_text}
+        return {
+            "answer": texttools.backtick_formatter(response.text),
+            "coins": coins,
+            "model": model_name,
+        }
     except Exception as e:
-        # logging.error(json.dumps(messages, ensure_ascii=False))
-        logging.error(f"Metis request failed, {e}")
+        logging.error(f"OpenAI request failed, {type(e)} {e}")
         raise
 
 
 @cached(ttl=24 * 3600)
-async def answer_with_ai(key, engine="metis", **kwargs) -> dict:
+async def answer_with_ai(key, *, image_urls: list[str] = [], **kwargs) -> dict:
     kwargs["lang"] = kwargs.get("lang", "Persian")
-    system, user = await get_prompt(key, **kwargs)
+    messages, model_name = await make_messages(key, image_urls=image_urls, **kwargs)
 
-    messages = [
-        {"role": "system", "content": system},
-        {"role": "user", "content": user[:40000]},
-    ]
-    return await answer_messages(messages, engine, **kwargs)
+    logging.info(f"{model_name=} {messages=}")
 
-
-@cached(ttl=24 * 3600)
-async def answer_image_with_ai(key, image_url, **kwargs) -> dict:
-    kwargs["lang"] = kwargs.get("lang", "Persian")
-    system, user = await get_prompt(key, **kwargs)
-    return await answer_image(system, user, image_url, **kwargs)
+    start_time = time.time()
+    if model_name.startswith("gemini"):
+        result = await answer_gemini(messages, len(image_urls), model_name, **kwargs)
+    else:
+        result = await answer_openai(messages, len(image_urls), model_name, **kwargs)
+    
+    logging.info(
+        f"Time taken: {model_name=} {key=} {time.time() - start_time:0.2f} seconds"
+    )
+    return result
 
 
 async def translate(
@@ -159,56 +197,3 @@ async def translate(
     return await answer_with_ai(
         "translate", text=text, target_language=target_language, **kwargs
     )
-
-
-async def answer_gemini(messages: list[dict], **kwargs):
-    import google.generativeai as genai
-    from google.api_core.client_options import ClientOptions
-
-    model_name = "gemini-1.5-flash"
-    genai.configure(
-        api_key=os.getenv("METIS_API_KEY"),
-        transport="rest",
-        client_options=ClientOptions(api_endpoint="https://api.metisai.ir"),
-    )
-    # genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-    model = genai.GenerativeModel(model_name)
-    response = model.generate_content(messages)
-
-    engine = AIEngine.get_by_name(model_name)
-    coins = engine.get_price(
-        response.usage_metadata.prompt_token_count,
-        response.usage_metadata.candidates_token_count,
-        image_count=kwargs.get("image_count", 0),
-    )
-    return texttools.backtick_formatter(response.text) | {"coins": coins}
-
-
-async def answer_vision(system: str, user: str, image_urls: list[str], **kwargs):
-    content = [f"{system}\n\n{user}"]
-    for image_url in image_urls:
-        encoded_image = await imagetools.download_image_base64(
-            image_url,
-            max_size_kb=100,
-            format="JPEG",
-            include_base64_header=False,
-            timeout=30,
-        )
-        content.append({"mime_type": "image/jpeg", "data": encoded_image})
-
-    try:
-        resp_text = await answer_gemini(content, image_count=len(image_urls), **kwargs)
-        return json.loads(resp_text)
-    except json.JSONDecodeError:
-        return {"answer": resp_text}
-    except Exception as e:
-        # logging.error(json.dumps(messages, ensure_ascii=False))
-        logging.error(f"Metis request failed, {e}")
-        raise
-
-
-@cached(ttl=24 * 3600)
-async def answer_vision_with_ai(key, image_urls, **kwargs) -> dict:
-    kwargs["lang"] = kwargs.get("lang", "Persian")
-    system, user = await get_prompt(key, **kwargs)
-    return await answer_vision(system, user, image_urls, **kwargs)

@@ -5,13 +5,7 @@ from usso.fastapi import jwt_access_security
 from utils.messages import get_prompt
 
 from .schemas import MultipleImagePrompt, Prompt, TranslateRequest, TranslateResponse
-from .services import (
-    answer_image_with_ai,
-    answer_vision_with_ai,
-    answer_with_ai,
-    get_prompt_list,
-    translate,
-)
+from .services import answer_with_ai, get_prompt_list, translate
 
 router = APIRouter(prefix="/ai", tags=["AI"])
 
@@ -53,14 +47,14 @@ async def answer_image_ai_route(
 ):
     # logging.info(f"{key} -> {json.dumps(data, ensure_ascii=False)}")
     user: UserData = jwt_access_security(request)
-    return await answer_image_with_ai(key, image_url, **data)
+    return await answer_with_ai(key, image_urls=[image_url], **data)
 
 
 @router.post("/vision/{key:str}", response_model=dict)
-async def answer_images_ai_route(request: Request, data: MultipleImagePrompt):
+async def answer_images_ai_route(request: Request, key: str, data: MultipleImagePrompt):
     # logging.info(f"{key} -> {json.dumps(data, ensure_ascii=False)}")
     user: UserData = jwt_access_security(request)
-    return await answer_vision_with_ai(data.key, data.image_urls, **data)
+    return await answer_with_ai(key, image_urls=data.image_urls, **data.data)
 
 
 @router.post("/search/{key}", response_model=dict)

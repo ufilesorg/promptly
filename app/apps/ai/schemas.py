@@ -30,7 +30,5 @@ class Prompt(BaseModel):
 
 
 class MultipleImagePrompt(AIResponse):
-    key: str
-    system: str | None
-    user: str
     image_urls: list[str]
+    data: dict = {}
