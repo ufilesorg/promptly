@@ -19,7 +19,3 @@ class Settings(config.Settings):
         "STRAPI_URL", "https://message.bot.inbeet.tech/api/prompts"
     )
     STRAPI_TOKEN: str = os.getenv("STRAPI_TOKEN")
-
-    IMGPROXY_KEY: str = os.getenv("IMGPROXY_KEY")
-    IMGPROXY_SALT: str = os.getenv("IMGPROXY_SALT")
-    IMGPROXY_URL: str = os.getenv("IMGPROXY_URL")
