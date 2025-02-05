@@ -132,6 +132,7 @@ async def answer_gemini(
     import google.generativeai as genai
     from google.api_core.client_options import ClientOptions
 
+    engine = AIEngine.get_by_name(model_name)
     genai.configure(
         api_key=os.getenv("METIS_API_KEY"),
         transport="rest",
@@ -141,7 +142,6 @@ async def answer_gemini(
     model = genai.GenerativeModel(model_name)
     response = model.generate_content(messages)
 
-    engine = AIEngine.get_by_name(model_name)
     coins = engine.get_price(
         response.usage_metadata.prompt_token_count,
         response.usage_metadata.candidates_token_count,
@@ -166,14 +166,14 @@ async def answer_with_ai(key, *, image_urls: list[str] = [], **kwargs) -> dict:
     kwargs["lang"] = kwargs.get("lang", "Persian")
     messages, model_name = await make_messages(key, image_urls=image_urls, **kwargs)
 
-    logging.info(f"{model_name=} {messages=}")
+    #logging.info(f"{model_name=} {messages=}")
 
     start_time = time.time()
     if model_name.startswith("gemini"):
         result = await answer_gemini(messages, len(image_urls), model_name, **kwargs)
     else:
         result = await answer_openai(messages, len(image_urls), model_name, **kwargs)
-    
+
     logging.info(
         f"Time taken: {model_name=} {key=} {time.time() - start_time:0.2f} seconds"
     )
