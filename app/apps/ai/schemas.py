@@ -1,3 +1,4 @@
+from decimal import Decimal
 from fastapi_mongo_base.core.enums import Language
 from pydantic import BaseModel, field_validator
 
@@ -8,7 +9,7 @@ class TranslateRequest(BaseModel):
 
 
 class AIResponse(BaseModel):
-    price: float = 0
+    coins: float = 0
 
 
 class TranslateResponse(AIResponse):
