@@ -1,4 +1,3 @@
-from decimal import Decimal
 from fastapi_mongo_base.core.enums import Language
 from pydantic import BaseModel, field_validator
 

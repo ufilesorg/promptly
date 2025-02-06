@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import time
+
 import langdetect
 from aiocache import cached
 from fastapi_mongo_base.core import enums
@@ -166,7 +167,7 @@ async def answer_with_ai(key, *, image_urls: list[str] = [], **kwargs) -> dict:
     kwargs["lang"] = kwargs.get("lang", "Persian")
     messages, model_name = await make_messages(key, image_urls=image_urls, **kwargs)
 
-    #logging.info(f"{model_name=} {messages=}")
+    # logging.info(f"{model_name=} {messages=}")
 
     start_time = time.time()
     if model_name.startswith("gemini"):
