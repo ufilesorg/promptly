@@ -168,26 +168,31 @@ async def answer_gemini(
 @cached(ttl=24 * 3600)
 async def answer_with_ai(key, *, image_urls: list[str] = [], **kwargs) -> dict:
     kwargs["lang"] = kwargs.get("lang", "Persian")
-    messages, model_name = await make_messages(key, image_urls=image_urls, **kwargs)
 
     # logging.info(f"{model_name=} {messages=}")
 
-    start_time = time.time()
     try:
+        messages, model_name = await make_messages(key, image_urls=image_urls, **kwargs)
+        start_time = time.time()
         if model_name.startswith("gemini"):
-            result = await answer_gemini(messages, len(image_urls), model_name, **kwargs)
+            result = await answer_gemini(
+                messages, len(image_urls), model_name, **kwargs
+            )
         else:
-            result = await answer_openai(messages, len(image_urls), model_name, **kwargs)
+            result = await answer_openai(
+                messages, len(image_urls), model_name, **kwargs
+            )
+        logging.info(
+            f"Time taken: {model_name=} {key=} {time.time() - start_time:0.2f} seconds"
+        )
+        return result
+
     except Exception as e:
+        image_urls_str = "\n".join(image_urls)
         logging.error(
-            f"AI request failed, {type(e)} {e} {model_name=}\n{'\n'.join(image_urls)}"
+            f"AI request failed, {type(e)} {e} {model_name=}\n{image_urls_str}"
         )
         raise
-
-    logging.info(
-        f"Time taken: {model_name=} {key=} {time.time() - start_time:0.2f} seconds"
-    )
-    return result
 
 
 async def translate(
