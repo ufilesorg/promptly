@@ -189,9 +189,7 @@ async def answer_with_ai(key, *, image_urls: list[str] = [], **kwargs) -> dict:
 
     except Exception as e:
         image_urls_str = "\n".join(image_urls)
-        logging.error(
-            f"AI request failed, {type(e)} {e} {model_name=}\n{image_urls_str}"
-        )
+        logging.error(f"AI request failed, {type(e)} {e} {key=}\n{image_urls_str}")
         raise
 
 
