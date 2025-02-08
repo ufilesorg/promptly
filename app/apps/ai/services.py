@@ -140,15 +140,15 @@ async def answer_gemini(
         client_options=ClientOptions(api_endpoint="https://api.metisai.ir"),
     )
     # genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-    model = genai.GenerativeModel(model_name)
-    response = model.generate_content(messages)
-
-    coins = engine.get_price(
-        response.usage_metadata.prompt_token_count,
-        response.usage_metadata.candidates_token_count,
-        image_count=image_count,
-    )
     try:
+        model = genai.GenerativeModel(model_name)
+        response = model.generate_content(messages)
+
+        coins = engine.get_price(
+            response.usage_metadata.prompt_token_count,
+            response.usage_metadata.candidates_token_count,
+            image_count=image_count,
+        )
         resp = texttools.json_extractor(response.text)
         return resp | {"coins": coins, "model": model_name}
     except json.JSONDecodeError:
@@ -158,7 +158,10 @@ async def answer_gemini(
             "model": model_name,
         }
     except Exception as e:
-        logging.error(f"OpenAI request failed, {type(e)} {e}")
+        import traceback
+
+        traceback_str = "".join(traceback.format_tb(e.__traceback__))
+        logging.error(f"Gemini request failed, {traceback_str}\n{type(e)} {e}")
         raise
 
 
@@ -170,10 +173,16 @@ async def answer_with_ai(key, *, image_urls: list[str] = [], **kwargs) -> dict:
     # logging.info(f"{model_name=} {messages=}")
 
     start_time = time.time()
-    if model_name.startswith("gemini"):
-        result = await answer_gemini(messages, len(image_urls), model_name, **kwargs)
-    else:
-        result = await answer_openai(messages, len(image_urls), model_name, **kwargs)
+    try:
+        if model_name.startswith("gemini"):
+            result = await answer_gemini(messages, len(image_urls), model_name, **kwargs)
+        else:
+            result = await answer_openai(messages, len(image_urls), model_name, **kwargs)
+    except Exception as e:
+        logging.error(
+            f"AI request failed, {type(e)} {e} {model_name=}\n{'\n'.join(image_urls)}"
+        )
+        raise
 
     logging.info(
         f"Time taken: {model_name=} {key=} {time.time() - start_time:0.2f} seconds"
