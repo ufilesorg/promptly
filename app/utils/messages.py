@@ -1,10 +1,9 @@
-from aiocache import cached
 from fastapi_mongo_base.core import exceptions
 from fastapi_mongo_base.utils import aionetwork
 from server.config import Settings
 
 
-@cached(ttl=24 * 3600)
+# @cached(ttl=24 * 3600)
 async def get_prompt_list(keys: list[str], raise_exception=True) -> dict:
     if isinstance(keys, str):
         keys = [keys]
@@ -22,7 +21,7 @@ async def get_prompt_list(keys: list[str], raise_exception=True) -> dict:
     return response
 
 
-@cached(ttl=24 * 3600)
+# @cached(ttl=24 * 3600)
 async def get_prompt(key, raise_exception=True) -> dict:
     url = f"{Settings.STRAPI_URL}?filters[key][$eq]={key}"
     headers = {"Authorization": f"Bearer {Settings.STRAPI_TOKEN}"}

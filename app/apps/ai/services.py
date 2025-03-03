@@ -14,7 +14,7 @@ from .engines import AIEngine
 from .schemas import Prompt
 
 
-@cached(ttl=24 * 3600)
+@cached(ttl=10 * 60)
 async def get_prompt(key, raise_exception=True, **kwargs) -> tuple[str, str, str]:
     prompt_dict: dict = await messages.get_prompt(key, raise_exception=raise_exception)
 
@@ -38,7 +38,7 @@ async def get_prompt_list(keys: list[str], raise_exception=True) -> list[Prompt]
     return [Prompt(**d.get("attributes", {})) for d in data]
 
 
-def messages_gemini(system, user, encoded_images, **kwargs):
+def messages_gemini(system, user, encoded_images=[], **kwargs):
     res = [system, user] if system else [user]
     for encoded_image in encoded_images:
         res.append({"mime_type": "image/jpeg", "data": encoded_image})
@@ -165,7 +165,51 @@ async def answer_gemini(
         raise
 
 
-@cached(ttl=24 * 3600)
+@basic.retry_execution(3, delay=5)
+async def answer_gemini_2(
+    messages: list[dict], image_count: int, model_name="gemini-2.0-flash", **kwargs
+):
+    from google import genai
+    from google.genai import types
+
+    http_options = types.HttpOptions(base_url="https://api.metisai.ir")
+
+    generation_config = {
+        "temperature": kwargs.get("temperature", 0.1),
+        "top_p": kwargs.get("top_p", 0.95),
+        "top_k": kwargs.get("top_k", 64),
+        "max_output_tokens": kwargs.get("max_output_tokens", 8192),
+        "response_mime_type": "text/plain",
+    }
+    try:
+
+        engine = AIEngine.get_by_name(model_name)
+        client = genai.Client(
+            api_key=os.getenv("METIS_API_KEY"), http_options=http_options
+        )
+        response = client.models.generate_content(model=model_name, contents=messages)
+        coins = engine.get_price(
+            response.usage_metadata.prompt_token_count,
+            response.usage_metadata.candidates_token_count,
+            image_count=image_count,
+        )
+        resp = texttools.json_extractor(response.text)
+        return resp | {"coins": coins, "model": model_name}
+    except json.JSONDecodeError:
+        return {
+            "answer": texttools.backtick_formatter(response.text),
+            "coins": coins,
+            "model": model_name,
+        }
+    except Exception as e:
+        import traceback
+
+        traceback_str = "".join(traceback.format_tb(e.__traceback__))
+        logging.error(f"Gemini request failed, {traceback_str}\n{type(e)} {e}")
+        raise
+
+
+# @cached(ttl=24 * 3600)
 async def answer_with_ai(key, *, image_urls: list[str] = [], **kwargs) -> dict:
     kwargs["lang"] = kwargs.get("lang", "Persian")
 
