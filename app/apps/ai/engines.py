@@ -45,6 +45,7 @@ class AIEngine(metaclass=Singleton):
             "o3-mini": MetisO3mini(),
             "gemini-1.5-flash": GeminiFlash(),
             "gemini-1.5-flash-8b": GeminiFlash8(),
+            "gemini-2.0-flash": GeminiFlash2(),
             "sonar": Perplexity(),
         }.get(model_name)
 
@@ -86,7 +87,7 @@ class MetisGpt4o(AIEngine):
 
     @property
     def input_price(self):
-        return 0.27
+        return 0.275
 
     @property
     def output_price(self):
@@ -103,11 +104,11 @@ class MetisGpt4oMini(AIEngine):
 
     @property
     def input_price(self):
-        return 0.02
+        return 0.017
 
     @property
     def output_price(self):
-        return 0.07
+        return 0.066
 
     @property
     def image_price(self):
@@ -128,11 +129,11 @@ class MetisO3mini(AIEngine):
 
     @property
     def input_price(self):
-        return 0.12
+        return 0.121
 
     @property
     def output_price(self):
-        return 0.48
+        return 0.484
 
 
 class AvvalAI(AIEngine):
@@ -159,11 +160,11 @@ class Grok(AIEngine):
 
     @property
     def input_price(self):
-        return 0.25
+        return 0.22
 
     @property
     def output_price(self):
-        return 1.5
+        return 1.1
 
 
 class GeminiFlash(AIEngine):
@@ -176,16 +177,15 @@ class GeminiFlash(AIEngine):
 
     @property
     def input_price(self):
-        return 0.01
+        return 0.008
 
     @property
     def output_price(self):
-        return 0.03
+        return 0.033
 
     @property
     def image_price(self):
         return 0.00004
-
 
 class GeminiFlash8(AIEngine):
     def __init__(self):
@@ -197,11 +197,11 @@ class GeminiFlash8(AIEngine):
 
     @property
     def input_price(self):
-        return 0.0
+        return 0.004
 
     @property
     def output_price(self):
-        return 0.02
+        return 0.017
 
     @property
     def image_price(self):
@@ -218,12 +218,33 @@ class GeminiPro(AIEngine):
 
     @property
     def input_price(self):
-        return 0.4
+        return 0.385
 
     @property
     def output_price(self):
-        return 1.5
+        return 1.155
 
     @property
     def image_price(self):
         return 0.0006575
+
+
+class GeminiFlash2(AIEngine):
+    def __init__(self):
+        super().__init__(os.getenv("METIS_API_KEY"), "https://api.metisai.ir/openai/v1")
+
+    @property
+    def model(self):
+        return "gemini-2.0-flash"
+
+    @property
+    def input_price(self):
+        return 0.011
+
+    @property
+    def output_price(self):
+        return 0.044
+
+    @property
+    def image_price(self):
+        return 0.00004

@@ -127,7 +127,7 @@ async def answer_openai(
 
 
 @basic.retry_execution(3, delay=5)
-async def answer_gemini(
+async def answer_gemini_old(
     messages: list[dict], image_count: int, model_name="gemini-1.5-flash", **kwargs
 ):
     import google.generativeai as genai
@@ -166,7 +166,7 @@ async def answer_gemini(
 
 
 @basic.retry_execution(3, delay=5)
-async def answer_gemini_2(
+async def answer_gemini(
     messages: list[dict], image_count: int, model_name="gemini-2.0-flash", **kwargs
 ):
     from google import genai
@@ -182,7 +182,6 @@ async def answer_gemini_2(
         "response_mime_type": "text/plain",
     }
     try:
-
         engine = AIEngine.get_by_name(model_name)
         client = genai.Client(
             api_key=os.getenv("METIS_API_KEY"), http_options=http_options
