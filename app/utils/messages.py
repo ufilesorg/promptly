@@ -1,5 +1,6 @@
 from fastapi_mongo_base.core import exceptions
 from fastapi_mongo_base.utils import aionetwork
+
 from server.config import Settings
 
 

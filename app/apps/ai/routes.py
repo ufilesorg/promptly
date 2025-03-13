@@ -2,6 +2,7 @@ from fastapi import APIRouter, Body, Request
 from fastapi_mongo_base.utils.texttools import format_string_keys
 from usso import UserData
 from usso.fastapi import jwt_access_security
+
 from utils.messages import get_prompt
 
 from .schemas import MultipleImagePrompt, Prompt, TranslateRequest, TranslateResponse
@@ -52,7 +53,9 @@ async def answer_image_ai_route(
 
 @router.post("/vision/{key:str}", response_model=dict)
 async def answer_images_ai_route(request: Request, key: str, data: MultipleImagePrompt):
-    # logging.info(f"{key} -> {json.dumps(data, ensure_ascii=False)}")
+    import logging
+    import json_advanced as json
+    logging.info(f"{key} -> {json.dumps(data, ensure_ascii=False)}")
     user: UserData = jwt_access_security(request)
     return await answer_with_ai(key, image_urls=data.image_urls, **data.data)
 

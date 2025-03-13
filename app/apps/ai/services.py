@@ -8,6 +8,7 @@ import langdetect
 from aiocache import cached
 from fastapi_mongo_base.core import enums
 from fastapi_mongo_base.utils import basic, imagetools, texttools
+
 from utils import messages
 
 from .engines import AIEngine
@@ -38,14 +39,16 @@ async def get_prompt_list(keys: list[str], raise_exception=True) -> list[Prompt]
     return [Prompt(**d.get("attributes", {})) for d in data]
 
 
-def messages_gemini(system, user, encoded_images=[], **kwargs):
+def messages_gemini(system: str, user: str, encoded_images: list[str], **kwargs):
     res = [system, user] if system else [user]
     for encoded_image in encoded_images:
         res.append({"mime_type": "image/jpeg", "data": encoded_image})
     return res
 
 
-def messages_openai(system, user, encoded_images, low_res=True, **kwargs):
+def messages_openai(
+    system: str, user: str, encoded_images: list[str], low_res: bool = True, **kwargs
+):
     if not encoded_images:
         return [
             {"role": "system", "content": system},

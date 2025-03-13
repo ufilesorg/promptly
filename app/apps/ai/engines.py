@@ -187,6 +187,7 @@ class GeminiFlash(AIEngine):
     def image_price(self):
         return 0.00004
 
+
 class GeminiFlash8(AIEngine):
     def __init__(self):
         super().__init__(os.getenv("METIS_API_KEY"), "https://api.metisai.ir/openai/v1")
