@@ -127,7 +127,7 @@ async def answer_openai(
 
 
 @basic.retry_execution(3, delay=5)
-async def answer_gemini_old(
+async def answer_gemini(
     messages: list[dict], image_count: int, model_name="gemini-1.5-flash", **kwargs
 ):
     import google.generativeai as genai
@@ -166,7 +166,7 @@ async def answer_gemini_old(
 
 
 @basic.retry_execution(3, delay=5)
-async def answer_gemini(
+async def answer_gemini_new(
     messages: list[dict], image_count: int, model_name="gemini-2.0-flash", **kwargs
 ):
     from google import genai
