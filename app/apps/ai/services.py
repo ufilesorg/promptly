@@ -46,6 +46,15 @@ def messages_gemini(system: str, user: str, encoded_images: list[str], **kwargs)
     return res
 
 
+def messages_gemini_new(system: str, user: str, encoded_images: list[str], **kwargs):
+    from google.genai import types
+
+    res = [system, user] if system else [user]
+    for encoded_image in encoded_images:
+        res.append(types.Part.from_bytes(data=encoded_image, mime_type="image/jpeg"))
+    return res
+
+
 def messages_openai(
     system: str, user: str, encoded_images: list[str], low_res: bool = True, **kwargs
 ):
