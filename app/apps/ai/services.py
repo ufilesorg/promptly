@@ -39,14 +39,14 @@ async def get_prompt_list(keys: list[str], raise_exception=True) -> list[Prompt]
     return [Prompt(**d.get("attributes", {})) for d in data]
 
 
-def messages_gemini(system: str, user: str, encoded_images: list[str], **kwargs):
+def messages_gemini_old(system: str, user: str, encoded_images: list[str], **kwargs):
     res = [system, user] if system else [user]
     for encoded_image in encoded_images:
         res.append({"mime_type": "image/jpeg", "data": encoded_image})
     return res
 
 
-def messages_gemini_new(system: str, user: str, encoded_images: list[str], **kwargs):
+def messages_gemini(system: str, user: str, encoded_images: list[str], **kwargs):
     from google.genai import types
 
     res = [system, user] if system else [user]
@@ -139,7 +139,7 @@ async def answer_openai(
 
 
 @basic.retry_execution(3, delay=5)
-async def answer_gemini(
+async def answer_gemini_old(
     messages: list[dict], image_count: int, model_name="gemini-1.5-flash", **kwargs
 ):
     import google.generativeai as genai
@@ -178,7 +178,7 @@ async def answer_gemini(
 
 
 @basic.retry_execution(3, delay=5)
-async def answer_gemini_new(
+async def answer_gemini(
     messages: list[dict], image_count: int, model_name="gemini-2.0-flash", **kwargs
 ):
     from google import genai
