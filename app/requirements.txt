@@ -12,7 +12,7 @@ ipython
 aiofiles
 aiocache
 
-beanie
+beanie<2
 fastapi-mongo-base
 ufaas-fastapi-business
 
@@ -20,7 +20,7 @@ apscheduler
 pillow
 pytz
 
-usso[fastapi]
+usso[fastapi]<0.28
 ufaas
 ufiles
 
